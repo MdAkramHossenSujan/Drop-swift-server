@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -24,8 +24,8 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-    const db=client.db('Drop_Swift_parcel&Delivery')
-    const parcelCollection=db.collection('parcels')
+    const db = client.db('Drop_Swift_parcel&Delivery')
+    const parcelCollection = db.collection('parcels')
 
     app.post('/parcels', async (req, res) => {
       try {
@@ -36,6 +36,43 @@ async function run() {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+    // Example route
+    app.get('/parcels', async (req, res) => {
+      try {
+        const email = req.query.email;
+        console.log(email)
+        const filter = email ? { createdBy: email } : {};
+
+        const items = await parcelCollection.find(filter).sort({ createdAt: -1 }).toArray(); // latest first
+
+        res.status(200).json(items);
+      } catch (err) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+    app.delete('/parcels/:id', async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const query = { _id: new ObjectId(id) };
+
+        const result = await parcelCollection.deleteOne(query);
+
+        if (result.deletedCount === 0) {
+          return res.status(404).json({ message: 'Parcel not found' });
+        }
+
+        res.send(result)
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({
+          success: false,
+          message: 'Something went wrong',
+          error: error.message
+        });
+      }
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -46,9 +83,9 @@ async function run() {
 }
 run().catch(console.dir);
 
-app.get('/',(req,res)=>{
-    res.send('Drop-swift is running')
+app.get('/', (req, res) => {
+  res.send('Drop-swift is running')
 })
-app.listen(PORT,()=>{
-    console.log(`Server in Listening to ${PORT}`)
+app.listen(PORT, () => {
+  console.log(`Server in Listening to ${PORT}`)
 })
