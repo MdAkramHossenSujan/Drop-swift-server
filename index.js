@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 dotenv.config();
+const stripe=require('stripe')(process.env.PAYMENT_KEY)
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -50,6 +51,21 @@ async function run() {
         res.status(500).json({ message: err.message });
       }
     });
+    app.get('/parcels/:id', async (req, res) => {
+      try {
+        const id = req.params.id;
+        const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+
+        if (!parcel) {
+          return res.status(404).json({ message: "Parcel not found" });
+        }
+
+        res.send(parcel);
+      } catch (err) {
+        res.status(500).json({ message: err.message });
+      }
+    });
+
     app.delete('/parcels/:id', async (req, res) => {
       try {
         const id = req.params.id;
@@ -70,6 +86,25 @@ async function run() {
           message: 'Something went wrong',
           error: error.message
         });
+      }
+    });
+    app.post('/create-payment-intent', async (req, res) => {
+            
+      const amountInCent = req.body.amountInCent
+
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amountInCent, // Amount in cents
+          currency: 'usd',
+          payment_method_types:['card'],
+          // payment_method: paymentMethodId,
+          // confirmation_method: 'manual',
+          // confirm: true,
+        });
+
+        res.json({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
       }
     });
 
