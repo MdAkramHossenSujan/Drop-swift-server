@@ -156,20 +156,37 @@ async function run() {
     // Example route
     app.get('/parcels', verifyFirebaseToken, async (req, res) => {
       try {
-        const email = req.query.email;
-        console.log('decoded', req.decoded)
-        if (req.decoded.email !== email) {
+        const { email, delivery_status } = req.query;
+    
+        // Check if token owner matches the email in query
+        if (email && req.decoded.email !== email) {
           return res.status(403).send({ message: 'forbidden access' });
         }
-        const filter = email ? { createdBy: email } : {};
-
-        const items = await parcelCollection.find(filter).sort({ createdAt: -1 }).toArray(); // latest first
-
+    
+        const filter = {};
+    
+        // If email is provided, filter by createdBy
+        if (email) {
+          filter.createdBy = email;
+        }
+    
+        // If delivery_status is provided, filter parcels by status
+        if (delivery_status) {
+          filter.delivery_status = delivery_status;
+        }
+    
+        const items = await parcelCollection
+          .find(filter)
+          .sort({ createdAt: -1 })
+          .toArray();
+    
         res.status(200).json(items);
       } catch (err) {
+        console.error(err);
         res.status(500).json({ message: err.message });
       }
     });
+    
     app.get('/parcels/:id', async (req, res) => {
       try {
         const id = req.params.id;
@@ -293,6 +310,62 @@ async function run() {
       const result = await ridersCollection.find(query).toArray();
       res.send(result);
     });
+    app.patch('/parcels/:id/status', async (req, res) => {
+      try {
+        const parcelId = req.params.id;
+        const { status, assignedRiderId } = req.body;
+    
+        if (!status) {
+          return res.status(400).send({ message: 'Status is required' });
+        }
+    
+        const filter = { _id: new ObjectId(parcelId) };
+        const updateDoc = {
+          $set: { delivery_status: status }
+        };
+    
+        if (assignedRiderId) {
+          updateDoc.$set.assignedRiderId = assignedRiderId;
+        }
+    
+        const result = await parcelCollection.updateOne(filter, updateDoc);
+    
+        if (result.modifiedCount > 0) {
+          res.send({ message: 'Parcel status updated successfully' });
+        } else {
+          res.status(404).send({ message: 'Parcel not found or status unchanged' });
+        }
+      } catch (error) {
+        console.error('Error updating parcel status:', error);
+        res.status(500).send({ message: 'Server error while updating parcel status' });
+      }
+    });
+    app.patch('/riders/:id/status', async (req, res) => {
+      try {
+        const riderId = req.params.id;
+        const { status } = req.body;
+    
+        if (!status) {
+          return res.status(400).send({ message: 'Status is required' });
+        }
+    
+        const filter = { _id: new ObjectId(riderId) };
+        const updateDoc = {
+          $set: { status }
+        };
+    
+        const result = await ridersCollection.updateOne(filter, updateDoc);
+    
+        if (result.modifiedCount > 0) {
+          res.send({ message: 'Rider status updated successfully' });
+        } else {
+          res.status(404).send({ message: 'Rider not found or status unchanged' });
+        }
+      } catch (error) {
+        console.error('Error updating rider status:', error);
+        res.status(500).send({ message: 'Server error while updating rider status' });
+      }
+    });    
     app.patch('/riders/:id', async (req, res) => {
       try {
         const id = req.params.id;
