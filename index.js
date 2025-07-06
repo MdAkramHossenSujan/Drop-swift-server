@@ -41,6 +41,7 @@ async function run() {
     const userCollection = db.collection('users')
     const ridersCollection = db.collection('riders')
     const riderPaymentCollection = db.collection('riderPayments')
+    const trackingsCollection = db.collection("trackings");
     const verifyFirebaseToken = async (req, res, next) => {
       console.log('Headers in Middleware', req.headers)
       const authHeader = req.headers.authorization
@@ -484,28 +485,102 @@ async function run() {
         res.status(500).send({ message: 'Server error while updating parcel status' });
       }
     });
-    app.patch('/parcels/:id/condition', verifyFirebaseToken, verifyRider, async (req, res) => {
-      const { id } = req.params;
-      const { status } = req.body;
+    app.patch(
+      '/parcels/:id/condition',
+      verifyFirebaseToken,
+      verifyRider,
+      async (req, res) => {
+        const { id } = req.params;
+        const { status } = req.body;
 
-      if (!status) {
-        return res.status(400).json({ message: 'Missing delivery status.' });
-      }
-
-      try {
-        const filter = { _id: new ObjectId(id) };
-        const update = { $set: { delivery_status: status, deliveredAt: new Date().toISOString(), rider_payment_status: 'pending' } };
-        const result = await parcelCollection.updateOne(filter, update);
-
-        if (result.modifiedCount === 0) {
-          return res.status(404).json({ message: 'Parcel not found or not updated.' });
+        if (!status) {
+          return res
+            .status(400)
+            .json({ message: 'Missing delivery status.' });
         }
 
-        res.json({ message: 'Parcel status updated successfully.' });
-      } catch (error) {
-        console.error('Error updating parcel status:', error);
-        res.status(500).json({ message: 'Internal server error.', error: error.message });
+        try {
+          const filter = { _id: new ObjectId(id) };
+
+          const setFields = {
+            delivery_status: status,
+            rider_payment_status: 'pending'
+          };
+
+          if (status === 'in_transit') {
+            setFields.picked_at = new Date().toISOString();
+          }
+
+          if (status === 'delivered') {
+            setFields.deliveredAt = new Date().toISOString();
+          }
+
+          const update = {
+            $set: setFields
+          };
+
+          const result = await parcelCollection.updateOne(
+            filter,
+            update
+          );
+
+          if (result.modifiedCount === 0) {
+            return res
+              .status(404)
+              .json({ message: 'Parcel not found or not updated.' });
+          }
+
+          res.json({
+            message: 'Parcel status updated successfully.'
+          });
+        } catch (error) {
+          console.error('Error updating parcel status:', error);
+          res
+            .status(500)
+            .json({
+              message: 'Internal server error.',
+              error: error.message
+            });
+        }
       }
+    );
+
+    app.post("/tracking", async (req, res) => {
+      const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
+
+      const log = {
+        tracking_id,
+        parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+        status,
+        message,
+        time: new Date(),
+        updated_by,
+      };
+
+      const result = await trackingCollection.insertOne(log);
+      res.send({ success: true, insertedId: result.insertedId });
+    });
+    app.get("/trackings/:trackingId", async (req, res) => {
+      const trackingId = req.params.trackingId;
+
+      const updates = await trackingsCollection
+        .find({ tracking_id: trackingId })
+        .sort({ timestamp: 1 }) // sort by time ascending
+        .toArray();
+
+      res.json(updates);
+    });
+
+    app.post("/trackings", async (req, res) => {
+      const update = req.body;
+
+      update.timestamp = new Date(); // ensure correct timestamp
+      if (!update.tracking_id || !update.status) {
+        return res.status(400).json({ message: "tracking_id and status are required." });
+      }
+
+      const result = await trackingsCollection.insertOne(update);
+      res.status(201).json(result);
     });
     app.patch('/riders/:id', async (req, res) => {
       try {
